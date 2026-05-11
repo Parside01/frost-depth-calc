@@ -1,0 +1,45 @@
+html,
+body,
+#map {
+  height: 100%;
+  margin: 0;
+}
+
+.leaflet-container {
+  font-family: system-ui, sans-serif;
+}
+
+.settlement-label {
+  background: transparent;
+  border: 0;
+}
+
+.settlement-label__content {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(30, 30, 30, 0.22);
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+  color: #202020;
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  max-width: 160px;
+  padding: 2px 6px;
+  text-align: center;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.settlement-label__content::after {
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid rgba(30, 30, 30, 0.22);
+  border-right: 1px solid rgba(30, 30, 30, 0.22);
+  bottom: -4px;
+  content: "";
+  height: 7px;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%) rotate(45deg);
+  width: 7px;
+}

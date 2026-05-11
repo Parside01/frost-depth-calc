@@ -1,0 +1,1 @@
+"""Ground freezing depth calculator."""
