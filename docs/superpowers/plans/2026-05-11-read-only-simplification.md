@@ -1,3 +1,34 @@
+# Read-only Simplification Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Make settlement data access read-only while keeping the current application behavior and file structure.
+
+**Architecture:** The existing layered structure stays in place. `SettlementRepository` keeps only read methods used by the UI and map, while database changes remain the responsibility of migrations. Tests stop depending on repository write methods and use direct SQL setup only where custom test data is needed.
+
+**Tech Stack:** Python 3.11, PySide6, SQLite, SQLAlchemy Core, unittest.
+
+---
+
+## File Structure
+
+- Modify `frost_depth/infrastructure/repositories.py`: remove settlement write methods and write-only helpers; remove unused imports.
+- Modify `tests/test_repository.py`: replace write/update/delete tests with read-only tests and direct SQL fixture setup.
+- Keep `frost_depth/ui/main_window.py`, `frost_depth/ui/map_widget.py`, `frost_depth/application/services.py`, and database schema unchanged.
+
+---
+
+### Task 1: Convert SettlementRepository To Read-only
+
+**Files:**
+- Modify: `frost_depth/infrastructure/repositories.py`
+- Test: `tests/test_repository.py`
+
+- [ ] **Step 1: Update repository tests first**
+
+Replace `tests/test_repository.py` with tests that do not call `SettlementRepository.add`, `update`, or `delete`.
+
+```python
 import unittest
 
 from sqlalchemy import insert, select
@@ -27,9 +58,7 @@ class SettlementRepositoryTest(unittest.TestCase):
         annual_temperature: float,
     ) -> None:
         with database.engine.begin() as connection:
-            country_id = connection.execute(
-                select(countries.c.id).where(countries.c.name == country)
-            ).scalar_one_or_none()
+            country_id = connection.execute(select(countries.c.id).where(countries.c.name == country)).scalar_one_or_none()
             if country_id is None:
                 country_id = connection.execute(insert(countries).values(name=country)).inserted_primary_key[0]
 
@@ -37,9 +66,7 @@ class SettlementRepositoryTest(unittest.TestCase):
                 select(regions.c.id).where(regions.c.country_id == country_id, regions.c.name == region)
             ).scalar_one_or_none()
             if region_id is None:
-                region_id = connection.execute(
-                    insert(regions).values(country_id=country_id, name=region)
-                ).inserted_primary_key[0]
+                region_id = connection.execute(insert(regions).values(country_id=country_id, name=region)).inserted_primary_key[0]
 
             values = {
                 "region_id": region_id,
@@ -129,3 +156,96 @@ class SettlementRepositoryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+```
+
+- [ ] **Step 2: Run repository tests and confirm the old code still passes**
+
+Run:
+
+```bash
+python -m unittest tests/test_repository.py
+```
+
+Expected: PASS. This confirms the replacement tests are valid before removing repository write methods.
+
+- [ ] **Step 3: Remove write methods from SettlementRepository**
+
+In `frost_depth/infrastructure/repositories.py`, remove these imports:
+
+```python
+from collections.abc import Sequence
+from sqlalchemy import delete, insert, update
+from sqlalchemy.exc import IntegrityError
+```
+
+Change the SQLAlchemy import to:
+
+```python
+from sqlalchemy import RowMapping, func, select
+```
+
+Delete these methods from `SettlementRepository`:
+
+```python
+add
+update
+delete
+set_coordinates_by_name
+_settlement_values
+_ensure_region
+_validate_months
+_validate_required
+```
+
+Keep these methods:
+
+```python
+list_countries
+list_regions
+list_settlements
+get
+find_nearest
+list_nearest
+_distance_expression
+_settlement_select
+_to_settlement
+```
+
+- [ ] **Step 4: Run repository tests**
+
+Run:
+
+```bash
+python -m unittest tests/test_repository.py
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Run all tests**
+
+Run:
+
+```bash
+python -m unittest discover tests
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Inspect diff**
+
+Run:
+
+```bash
+rtk diff
+```
+
+Expected: diff only removes runtime write support and updates repository tests.
+
+- [ ] **Step 7: Commit**
+
+Run:
+
+```bash
+git add frost_depth/infrastructure/repositories.py tests/test_repository.py docs/superpowers/plans/2026-05-11-read-only-simplification.md
+git commit -m "refactor: make settlement repository read-only"
+```
