@@ -22,7 +22,7 @@ class Database:
             engine = create_engine(f"sqlite+pysqlite:///{self.path}", future=True)
 
         @event.listens_for(engine, "connect")
-        def _enable_foreign_keys(dbapi_connection, _connection_record) -> None:  # type: ignore[no-untyped-def]
+        def _enable_foreign_keys(dbapi_connection, _connection_record) -> None:
             dbapi_connection.execute("PRAGMA foreign_keys = ON")
 
         return engine

@@ -1,7 +1,4 @@
-from collections.abc import Sequence
-
-from sqlalchemy import RowMapping, delete, func, insert, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import RowMapping, func, select
 
 from frost_depth.domain.models import BuildingCoefficient, Settlement, SoilType
 from frost_depth.infrastructure.database import Database
@@ -52,74 +49,6 @@ class SettlementRepository:
             row = connection.execute(stmt).mappings().one_or_none()
         return self._to_settlement(row) if row else None
 
-    def add(
-        self,
-        country: str,
-        region: str,
-        name: str,
-        monthly_temperatures: Sequence[float],
-        annual_temperature: float,
-        latitude: float,
-        longitude: float,
-    ) -> Settlement:
-        self._validate_required(country, region, name)
-        self._validate_months(monthly_temperatures)
-
-        with self._database.engine.begin() as connection:
-            region_id = self._ensure_region(connection, country.strip(), region.strip())
-            values = self._settlement_values(region_id, name.strip(), monthly_temperatures, annual_temperature, latitude, longitude)
-            try:
-                result = connection.execute(insert(settlements).values(**values))
-            except IntegrityError as error:
-                raise ValueError("Такой населенный пункт уже есть в выбранном регионе") from error
-
-        settlement = self.get(int(result.inserted_primary_key[0]))
-        if settlement is None:
-            raise RuntimeError("Не удалось прочитать созданный населенный пункт")
-        return settlement
-
-    def update(
-        self,
-        settlement_id: int,
-        country: str,
-        region: str,
-        name: str,
-        monthly_temperatures: Sequence[float],
-        annual_temperature: float,
-        latitude: float,
-        longitude: float,
-    ) -> None:
-        self._validate_required(country, region, name)
-        self._validate_months(monthly_temperatures)
-
-        with self._database.engine.begin() as connection:
-            region_id = self._ensure_region(connection, country.strip(), region.strip())
-            values = self._settlement_values(region_id, name.strip(), monthly_temperatures, annual_temperature, latitude, longitude)
-            try:
-                connection.execute(update(settlements).where(settlements.c.id == settlement_id).values(**values))
-            except IntegrityError as error:
-                raise ValueError("Такой населенный пункт уже есть в выбранном регионе") from error
-
-    def delete(self, settlement_id: int) -> None:
-        with self._database.engine.begin() as connection:
-            connection.execute(delete(settlements).where(settlements.c.id == settlement_id))
-
-    def set_coordinates_by_name(self, country: str, region: str, name: str, latitude: float, longitude: float) -> None:
-        stmt = (
-            update(settlements)
-            .where(
-                settlements.c.name == name,
-                settlements.c.region_id.in_(
-                    select(regions.c.id)
-                    .join(countries, countries.c.id == regions.c.country_id)
-                    .where(countries.c.name == country, regions.c.name == region)
-                ),
-            )
-            .values(latitude=latitude, longitude=longitude)
-        )
-        with self._database.engine.begin() as connection:
-            connection.execute(stmt)
-
     def find_nearest(self, latitude: float, longitude: float) -> Settlement | None:
         nearest = self.list_nearest(latitude, longitude, limit=1)
         return nearest[0] if nearest else None
@@ -154,54 +83,6 @@ class SettlementRepository:
             .join(regions, regions.c.id == settlements.c.region_id)
             .join(countries, countries.c.id == regions.c.country_id)
         )
-
-    @staticmethod
-    def _settlement_values(
-        region_id: int,
-        name: str,
-        monthly_temperatures: Sequence[float],
-        annual_temperature: float,
-        latitude: float,
-        longitude: float,
-    ) -> dict[str, float | int | str]:
-        values: dict[str, float | int | str] = {
-            "region_id": region_id,
-            "name": name,
-            "annual_temperature": annual_temperature,
-            "latitude": latitude,
-            "longitude": longitude,
-        }
-        values.update({column.name: float(value) for column, value in zip(MONTH_COLUMNS, monthly_temperatures, strict=True)})
-        return values
-
-    @staticmethod
-    def _ensure_region(connection, country: str, region: str) -> int:  # type: ignore[no-untyped-def]
-        country_id = connection.execute(select(countries.c.id).where(countries.c.name == country)).scalar_one_or_none()
-        if country_id is None:
-            result = connection.execute(insert(countries).values(name=country))
-            country_id = int(result.inserted_primary_key[0])
-
-        region_id = connection.execute(
-            select(regions.c.id).where(regions.c.country_id == country_id, regions.c.name == region)
-        ).scalar_one_or_none()
-        if region_id is None:
-            result = connection.execute(insert(regions).values(country_id=country_id, name=region))
-            region_id = int(result.inserted_primary_key[0])
-        return int(region_id)
-
-    @staticmethod
-    def _validate_months(monthly_temperatures: Sequence[float]) -> None:
-        if len(monthly_temperatures) != 12:
-            raise ValueError("Нужно передать 12 среднемесячных температур")
-
-    @staticmethod
-    def _validate_required(country: str, region: str, name: str) -> None:
-        if not country.strip():
-            raise ValueError("Страна не заполнена")
-        if not region.strip():
-            raise ValueError("Регион не заполнен")
-        if not name.strip():
-            raise ValueError("Населенный пункт не заполнен")
 
     @staticmethod
     def _to_settlement(row: RowMapping) -> Settlement:
